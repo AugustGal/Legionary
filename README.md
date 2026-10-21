@@ -1,6 +1,3 @@
-# \# Legionary - DLL
+# Legionary - DLL
 
-# 
-
-# The DLL for Legionary - A Spear Integration
-
+The DLL for Legionary - A Spear Integration
