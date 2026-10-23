@@ -23,7 +23,25 @@ void Settings::LoadSettings() noexcept
         logger::debug("Debug logging enabled");
     }
 
-    // Load settings
-
     logger::info("Loaded settings");
+}
+
+void Settings::LoadForms()
+{
+    CSimpleIniA ini;
+
+    ini.SetUnicode();
+    ini.LoadFile(R"(.\Data\SKSE\Plugins\Legionary.ini)");
+
+    std::string spearKeywordFormId((ini.GetValue("Settings", "SpearKeywordFormId", "")));
+    std::string spearKeywordPlugin((ini.GetValue("Settings", "SpearKeywordPlugin", "")));
+    SpearKeyword = LoadFormPointerFromIni<RE::BGSKeyword>(spearKeywordFormId, spearKeywordPlugin);
+}
+
+RE::FormID Settings::ParseFormID(const std::string& str)
+{
+    RE::FormID result;
+    std::istringstream ss{ str };
+    ss >> std::hex >> result;
+    return result;
 }

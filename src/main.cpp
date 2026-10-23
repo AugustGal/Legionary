@@ -1,26 +1,31 @@
 #include "Events.h"
+#include "EquipPlacementManager.h"
 #include "Settings.h"
 
 
-void Listener(SKSE::MessagingInterface::Message* a_message)
+void Listener(SKSE::MessagingInterface::Message* a_message) noexcept
 {
     if (a_message->type == SKSE::MessagingInterface::kDataLoaded) {
+        
+        auto settings = Settings::GetSingleton();
+
+        if (settings)
+        {
+            settings->LoadForms();
+        }
 
         if (GetModuleHandleW(L"ImmersiveEquipmentDisplays.dll")) {
-            logger::info("IED detected. Skipping equipment placement registration.");
+            logger::warn("IED detected. Skipped sink registration");
             return;
         }
 
-        EquipEventSink::Register();
+        Player3DLoadedEventSink::Register();
+        ActorEquipEventSink::Register();
         Actor3DLoadedEventSink::Register();
-        ActorInitScriptEventSink::Register();
         ActorRaceSwitchEventSink::Register();
-        ActorLocationChangeEventSink::Register();
-        ActorNodeUpdateEventSink::Register();
-        CameraEventSink::Register();
-        MenuCloseEventSink::Register();
+        LoadGameEventSink::Register();
 
-        logger::info("Equipment placement sinks registered.");
+        logger::info("Sinks registered");
     }
 }
 
@@ -39,8 +44,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
 
     Settings::GetSingleton()->LoadSettings();
 
-    const auto messaging = SKSE::GetMessagingInterface();
-    if (!messaging || !messaging->RegisterListener(Listener)) {
+    if (const auto messaging{ SKSE::GetMessagingInterface() }; !messaging->RegisterListener(Listener)) {
         return false;
     }
 

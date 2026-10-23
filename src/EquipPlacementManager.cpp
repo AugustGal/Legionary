@@ -1,68 +1,91 @@
 #include "EquipPlacementManager.h"
+#include "Settings.h"
 
-constexpr std::string_view kSpearKeyword = "AUG_WeapTypeSpear";
-
-struct HandNodes
+namespace
 {
-    std::string_view weaponNode;
-    std::string_view hipNode;
-    std::string_view backNode;
-};
+    enum class WeaponType
+    {
+        kSword,
+        kSpear,
+        kNotSwordOrSpear,
+    };
 
-constexpr HandNodes kRightHand{
-    .weaponNode = "WeaponSword",
-    .hipNode    = "MOV WeaponSwordDefault",
-    .backNode   = "MOV WeaponSwordOnBack",
-};
+    struct HandNodes
+    {
+        std::string_view weaponNode;
+        std::string_view hipNode;
+        std::string_view backNode;
+    };
 
-constexpr HandNodes kLeftHand{
-    .weaponNode = "WeaponSwordLeft",
-    .hipNode    = "MOV WeaponSwordLeftDefault",
-    .backNode   = "MOV WeaponSwordLeftOnBack",
-};
+    constexpr HandNodes kRightHand{
+        .weaponNode = "WeaponSword",
+        .hipNode = "MOV WeaponSwordDefault",
+        .backNode = "MOV WeaponSwordOnBack",
+    };
 
-RE::NiNode* AsNode(RE::NiAVObject* a_object)
-{
-    return a_object ? a_object->AsNode() : nullptr;
-}
+    constexpr HandNodes kLeftHand{
+        .weaponNode = "WeaponSwordLeft",
+        .hipNode = "MOV WeaponSwordLeftDefault",
+        .backNode = "MOV WeaponSwordLeftOnBack",
+    };
 
-bool IsSpear(RE::TESForm* a_form)
-{
-    auto* weapon = a_form ? a_form->As<RE::TESObjectWEAP>() : nullptr;
-    return weapon && weapon->IsOneHandedSword() && weapon->HasKeywordByEditorID(kSpearKeyword);
-}
-
-void SetWeaponPlacement(RE::NiNode* a_root, const HandNodes& a_nodes, bool a_onBack)
-{
-    if (!a_root) {
-        return;
+    RE::NiNode* AsNode(RE::NiAVObject* a_object)
+    {
+        return a_object ? a_object->AsNode() : nullptr;
     }
 
-    auto* weaponNode = AsNode(a_root->GetObjectByName(a_nodes.weaponNode.data()));
-    const auto& targetName = a_onBack ? a_nodes.backNode : a_nodes.hipNode;
-    auto* targetNode = AsNode(a_root->GetObjectByName(targetName.data()));
+    WeaponType GetWeaponType(RE::TESForm* a_form)
+    {
+        auto weapon = a_form ? a_form->As<RE::TESObjectWEAP>() : nullptr;
 
-    if (!weaponNode || !targetNode || weaponNode == targetNode || !weaponNode->parent || weaponNode->parent == targetNode) {
-        return;
+        if (!weapon || !weapon->IsOneHandedSword()) {
+            return WeaponType::kNotSwordOrSpear;
+        }
+
+        return weapon->HasKeyword(Settings::GetSingleton()->SpearKeyword) ? WeaponType::kSpear : WeaponType::kSword;
     }
 
-    targetNode->AttachChild(weaponNode, true);
+    bool MoveWeaponNode(RE::NiNode* a_root, const HandNodes& a_nodes, bool a_onBack)
+    {
+        if (!a_root) {
+            return false;
+        }
 
-    RE::NiUpdateData updateData{};
-    updateData.flags = RE::NiUpdateData::Flag::kDisableCollision;
+        auto weaponNode = AsNode(a_root->GetObjectByName(a_nodes.weaponNode));
+        auto targetNode = AsNode(a_root->GetObjectByName(a_onBack ? a_nodes.backNode : a_nodes.hipNode));
 
-    weaponNode->UpdateDownwardPass(updateData, 0);
-    weaponNode->UpdateWorldBound();
-}
+        if (!weaponNode || !targetNode || weaponNode->parent == targetNode) {
+            return false ;
+        }
 
-void ApplyPlacements(RE::NiNode* a_root, bool a_rightHandSpear, bool a_leftHandSpear)
-{
-    if (!a_root) {
-        return;
+        targetNode->AttachChild(weaponNode, true);
+
+        RE::NiUpdateData updateData{};
+        updateData.flags = RE::NiUpdateData::Flag::kDisableCollision;
+
+        weaponNode->UpdateDownwardPass(updateData, 0);
+        weaponNode->UpdateWorldBound();
+
+        logger::debug("Moved weapon node");
+        return true;
     }
 
-    SetWeaponPlacement(a_root, kRightHand, a_rightHandSpear);
-    SetWeaponPlacement(a_root, kLeftHand, a_leftHandSpear);
+    void VerifyPlacements(RE::NiNode* a_root, WeaponType a_rightHand, WeaponType a_leftHand)
+    {
+        if (!a_root) {
+            return;
+        }
+
+        if (a_rightHand != WeaponType::kNotSwordOrSpear) {
+            MoveWeaponNode(a_root, kRightHand, a_rightHand == WeaponType::kSpear);
+            logger::debug("Checking right hand nodes");
+        }
+
+        if (a_leftHand != WeaponType::kNotSwordOrSpear) {
+            MoveWeaponNode(a_root, kLeftHand, a_leftHand == WeaponType::kSpear);
+            logger::debug("Checking left hand nodes");
+        }
+    }
 }
 
 EquipPlacementManager* EquipPlacementManager::GetSingleton()
@@ -71,37 +94,64 @@ EquipPlacementManager* EquipPlacementManager::GetSingleton()
     return &equipPlacementManager;
 }
 
-void EquipPlacementManager::Update(RE::Actor* a_actor)
+void EquipPlacementManager::RequestNodeUpdate(RE::Actor* a_actor)
 {
     if (!a_actor) {
         return;
     }
 
-    const auto handle = a_actor->GetHandle();
+    auto handle = a_actor->GetHandle();
 
     SKSE::GetTaskInterface()->AddTask([handle]() {
-        auto actor = handle.get();
+        auto actor = handle.get().get();
 
         if (!actor || !actor->Is3DLoaded()) {
             return;
         }
 
-        auto* root3p = AsNode(actor->Get3D(false));
-        auto* root1p = AsNode(actor->Get3D(true));
+        auto root3p = AsNode(actor->Get3D(false));
+        auto root1p = AsNode(actor->Get3D(true));
 
         if (!root3p && !root1p) {
             return;
         }
 
-        const bool rightHandSpear = IsSpear(actor->GetEquippedObject(false));
-        const bool leftHandSpear = IsSpear(actor->GetEquippedObject(true));
+        const auto rightHand = GetWeaponType(actor->GetEquippedObject(false));
+        const auto leftHand = GetWeaponType(actor->GetEquippedObject(true));
 
         if (root3p) {
-            ApplyPlacements(root3p, rightHandSpear, leftHandSpear);
+            VerifyPlacements(root3p, rightHand, leftHand);
         }
 
-        if (root1p && root1p != root3p) {
-            ApplyPlacements(root1p, rightHandSpear, leftHandSpear);
+        if (root1p) {
+            VerifyPlacements(root1p, rightHand, leftHand);
         }
-        });
+    });
+}
+
+bool EquipPlacementManager::PlayerHasRequiredNodes()
+{
+    auto player = RE::PlayerCharacter::GetSingleton();
+    if (!player) {
+        logger::warn("Player wasn't loaded before checking the skeleton");
+        return false;
+    }
+
+    auto root = AsNode(player->Get3D(false));
+    if (!root) {
+        logger::warn("Player's 3D wasn't loaded before checking the skeleton");
+        return false;
+    }
+
+    for (auto hand : { &kRightHand, &kLeftHand }) {
+        for (auto node : { hand->weaponNode, hand->hipNode, hand->backNode }) {
+            if (!AsNode(root->GetObjectByName(node))) {
+                logger::warn("Player has no compatible skeleton");
+                return false;
+            }
+        }
+    }
+
+    logger::info("Player has compatible skeleton");
+    return true;
 }
