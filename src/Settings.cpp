@@ -28,6 +28,8 @@ void Settings::LoadSettings() noexcept
 
 void Settings::LoadForms()
 {
+    logger::info("Loading forms");
+
     CSimpleIniA ini;
 
     ini.SetUnicode();
@@ -36,6 +38,8 @@ void Settings::LoadForms()
     std::string spearKeywordFormId((ini.GetValue("Settings", "SpearKeywordFormId", "")));
     std::string spearKeywordPlugin((ini.GetValue("Settings", "SpearKeywordPlugin", "")));
     SpearKeyword = LoadFormPointerFromIni<RE::BGSKeyword>(spearKeywordFormId, spearKeywordPlugin);
+
+    logger::info("Loaded forms");
 }
 
 RE::FormID Settings::ParseFormID(const std::string& str)

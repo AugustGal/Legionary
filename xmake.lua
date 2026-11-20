@@ -7,7 +7,7 @@ add_requires("simpleini")
 
 -- set project
 set_project("Legionary")
-set_version("0.0.1")
+set_version("0.0.2")
 set_license("GPL-3.0")
 
 -- set defaults

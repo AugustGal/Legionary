@@ -23,6 +23,7 @@ void Listener(SKSE::MessagingInterface::Message* a_message) noexcept
         ActorEquipEventSink::Register();
         Actor3DLoadedEventSink::Register();
         ActorRaceSwitchEventSink::Register();
+        ActorNodeUpdateEventSink::Register();
         LoadGameEventSink::Register();
 
         logger::info("Sinks registered");

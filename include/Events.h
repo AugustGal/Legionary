@@ -16,8 +16,7 @@ public:
             return RE::BSEventNotifyControl::kContinue;
         }
 
-        auto* reference = a_event->actor.get();
-        EquipPlacementManager::GetSingleton()->RequestNodeUpdate(AsActor(reference));
+        EquipPlacementManager::GetSingleton()->QueueWeaponPlacementUpdate(AsActor(a_event->actor.get()));
 
         return RE::BSEventNotifyControl::kContinue;
     }
@@ -33,7 +32,7 @@ public:
         }
 
         auto* form = RE::TESForm::LookupByID(a_event->formID);
-        EquipPlacementManager::GetSingleton()->RequestNodeUpdate(form ? form->As<RE::Actor>() : nullptr);
+        EquipPlacementManager::GetSingleton()->QueueWeaponPlacementUpdate(form ? form->As<RE::Actor>() : nullptr);
 
         return RE::BSEventNotifyControl::kContinue;
     }
@@ -45,7 +44,20 @@ public:
     RE::BSEventNotifyControl ProcessEvent(const RE::TESSwitchRaceCompleteEvent* a_event, RE::BSTEventSource<RE::TESSwitchRaceCompleteEvent>*) override
     {
         if (a_event) {
-            EquipPlacementManager::GetSingleton()->RequestNodeUpdate(AsActor(a_event->subject.get()));
+            EquipPlacementManager::GetSingleton()->QueueWeaponPlacementUpdate(AsActor(a_event->subject.get()));
+        }
+
+        return RE::BSEventNotifyControl::kContinue;
+    }
+};
+
+class ActorNodeUpdateEventSink final : public EventSingleton<ActorNodeUpdateEventSink, SKSE::NiNodeUpdateEvent>
+{
+public:
+    RE::BSEventNotifyControl ProcessEvent(const SKSE::NiNodeUpdateEvent* a_event, RE::BSTEventSource<SKSE::NiNodeUpdateEvent>*) override
+    {
+        if (a_event) {
+            EquipPlacementManager::GetSingleton()->QueueWeaponPlacementUpdate(AsActor(a_event->reference));
         }
 
         return RE::BSEventNotifyControl::kContinue;
@@ -63,7 +75,7 @@ public:
 
         auto player = RE::PlayerCharacter::GetSingleton();
         auto manager = EquipPlacementManager::GetSingleton();
-        manager->RequestNodeUpdate(player);
+        manager->QueueWeaponPlacementUpdate(player);
 
         auto processLists = RE::ProcessLists::GetSingleton();
         if (!processLists) {
@@ -72,31 +84,15 @@ public:
 
         processLists->ForAllActors([&](RE::Actor* a_actor) {
             if (a_actor) {
-                manager->RequestNodeUpdate(a_actor);
+                manager->QueueWeaponPlacementUpdate(a_actor);
             }
 
             return RE::BSContainer::ForEachResult::kContinue;
-        });
+            });
 
         return RE::BSEventNotifyControl::kContinue;
     }
 };
-
-inline void UnregisterAllSinks()
-{
-    auto source = RE::ScriptEventSourceHolder::GetSingleton();
-    if (source) {
-        source->RemoveEventSink<RE::TESEquipEvent>(ActorEquipEventSink::GetSingleton());
-
-        source->RemoveEventSink<RE::TESObjectLoadedEvent>(Actor3DLoadedEventSink::GetSingleton());
-
-        source->RemoveEventSink<RE::TESSwitchRaceCompleteEvent>(ActorRaceSwitchEventSink::GetSingleton());
-
-        source->RemoveEventSink<RE::TESLoadGameEvent>(LoadGameEventSink::GetSingleton());
-
-        logger::info("Sinks unregistered");
-    }
-}
 
 class Player3DLoadedEventSink final : public EventSingleton<Player3DLoadedEventSink, RE::TESObjectLoadedEvent>
 {
@@ -107,19 +103,11 @@ public:
             return RE::BSEventNotifyControl::kContinue;
         }
 
-        auto player = RE::PlayerCharacter::GetSingleton();
-        if (!player || a_event->formID != player->GetFormID()) {
-            return RE::BSEventNotifyControl::kContinue;
-        }
-
         if (a_source) {
             a_source->RemoveEventSink(this);
         }
 
-        if (!EquipPlacementManager::GetSingleton()->PlayerHasRequiredNodes()) {
-            UnregisterAllSinks();
-            return RE::BSEventNotifyControl::kContinue;
-        }
+        EquipPlacementManager::GetSingleton()->VerifyPlayerSkeletonCompatbility();
 
         return RE::BSEventNotifyControl::kContinue;
     }
